@@ -119,7 +119,9 @@ enum Fixups {
   fixup_loongarch_add64 = FirstLiteralRelocationKind + ELF::R_LARCH_ADD64,
   fixup_loongarch_sub64 = FirstLiteralRelocationKind + ELF::R_LARCH_SUB64,
   // Generate an R_LARCH_RELAX which indicates the linker may relax here.
-  fixup_loongarch_relax = FirstLiteralRelocationKind + ELF::R_LARCH_RELAX
+  fixup_loongarch_relax = FirstLiteralRelocationKind + ELF::R_LARCH_RELAX,
+  // Generate an R_LARCH_ALIGN which indicates the linker may fixup align here.
+  fixup_loongarch_align = FirstLiteralRelocationKind + ELF::R_LARCH_ALIGN
 };
 
 } // end namespace LoongArch

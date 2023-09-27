@@ -162,6 +162,54 @@ void LoongArchAsmBackend::applyFixup(const MCAssembler &Asm,
   }
 }
 
+// Linker relaxation may change code size. We have to insert Nops
+// for .align directive when linker relaxation enabled. So then Linker
+// could satisfy alignment by removing Nops.
+// The function returns the total Nops Size we need to insert.
+bool LoongArchAsmBackend::shouldInsertExtraNopBytesForCodeAlign(
+    const MCAlignFragment &AF, unsigned &Size) {
+  // Calculate Nops Size only when linker relaxation enabled.
+  const MCSubtargetInfo *STI = AF.getSubtargetInfo();
+  if (!STI->hasFeature(LoongArch::FeatureRelax))
+    return false;
+
+  const unsigned MinNopLen = 4;
+  Size = AF.getAlignment().value() - MinNopLen;
+  return AF.getAlignment() > MinNopLen;
+}
+
+// We need to insert R_LARCH_ALIGN relocation type to indicate the
+// position of Nops and the total bytes of the Nops have been inserted
+// when linker relaxation enabled.
+// The function inserts fixup_loongarch_align fixup which eventually will
+// transfer to R_LARCH_ALIGN relocation type.
+bool LoongArchAsmBackend::shouldInsertFixupForCodeAlign(
+    MCAssembler &Asm, const MCAsmLayout &Layout, MCAlignFragment &AF) {
+  // Insert the fixup only when linker relaxation enabled.
+  const MCSubtargetInfo *STI = AF.getSubtargetInfo();
+  if (!STI->hasFeature(LoongArch::FeatureRelax))
+    return false;
+
+  // Calculate total Nops we need to insert. If there are none to insert
+  // then simply return.
+  unsigned Count;
+  if (!shouldInsertExtraNopBytesForCodeAlign(AF, Count))
+    return false;
+
+  const MCExpr *Dummy = MCConstantExpr::create(0, Asm.getContext());
+  // Create fixup_loongarch_align fixup.
+  MCFixup Fixup = MCFixup::create(
+      0, Dummy, MCFixupKind(LoongArch::fixup_loongarch_align), SMLoc());
+
+  uint64_t FixedValue = 0;
+  MCValue NopBytes = MCValue::get(Count);
+
+  Asm.getWriter().recordRelocation(Asm, Layout, &AF, Fixup, NopBytes,
+                                   FixedValue);
+
+  return true;
+}
+
 bool LoongArchAsmBackend::shouldForceRelocation(const MCAssembler &Asm,
                                                 const MCFixup &Fixup,
                                                 const MCValue &Target) {

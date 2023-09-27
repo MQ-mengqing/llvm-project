@@ -45,6 +45,15 @@ public:
                   uint64_t Value, bool IsResolved,
                   const MCSubtargetInfo *STI) const override;
 
+  // Return Size with extra Nop Bytes for alignment directive in code section.
+  bool shouldInsertExtraNopBytesForCodeAlign(const MCAlignFragment &AF,
+                                             unsigned &Size) override;
+
+  // Insert target specific fixup type for alignment directive in code section.
+  bool shouldInsertFixupForCodeAlign(MCAssembler &Asm,
+                                     const MCAsmLayout &Layout,
+                                     MCAlignFragment &AF) override;
+
   bool shouldForceRelocation(const MCAssembler &Asm, const MCFixup &Fixup,
                              const MCValue &Target) override;
 
