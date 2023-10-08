@@ -95,6 +95,8 @@ public:
 
   // Do a linker relaxation pass and return true if we changed something.
   virtual bool relaxOnce(int pass) const { return false; }
+  // Do finalize relaxation after collecting relaxation infos.
+  virtual void finalizeRelax(int passes) const {}
 
   virtual void applyJumpInstrMod(uint8_t *loc, JumpModType type,
                                  JumpModType val) const {}
@@ -229,13 +231,13 @@ uint64_t getPPC64TocBase();
 uint64_t getAArch64Page(uint64_t expr);
 template <typename ELFT> void writeARMCmseImportLib();
 uint64_t getLoongArchPageDelta(uint64_t dest, uint64_t pc);
-void riscvFinalizeRelax(int passes);
 void mergeRISCVAttributesSections();
 void addArmInputSectionMappingSymbols();
 void addArmSyntheticSectionMappingSymbol(Defined *);
 void sortArmMappingSymbols();
 void convertArmInstructionstoBE8(InputSection *sec, uint8_t *buf);
 void createTaggedSymbols(const SmallVector<ELFFileBase *, 0> &files);
+void initSymbolAnchors();
 
 LLVM_LIBRARY_VISIBILITY extern const TargetInfo *target;
 TargetInfo *getTarget();
