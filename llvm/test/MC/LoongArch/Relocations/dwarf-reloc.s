@@ -21,7 +21,9 @@
 # CHECKR:       Relocations [
 # CHECKR-NEXT:    Section ({{.*}}) .rela.text {
 # CHECKR-NEXT:       0x8 R_LARCH_PCALA_HI20 .L1 0x0
+# CHECKR-NEXT:       0x8 R_LARCH_RELAX - 0x0
 # CHECKR-NEXT:       0xC R_LARCH_PCALA_LO12 .L1 0x0
+# CHECKR-NEXT:       0xC R_LARCH_RELAX - 0x0
 # CHECKR-NEXT:     }
 # CHECKR-NEXT:     Section ({{.*}}) .rela.debug_line {
 # CHECKR-NEXT:       0x22 R_LARCH_32 .debug_line_str 0x0
@@ -34,6 +36,10 @@
 # CHECKR-NEXT:     }
 # CHECKR-NEXT:     Section ({{.*}}) .rela.eh_frame {
 # CHECKR-NEXT:       0x1C R_LARCH_32_PCREL <null> 0x0
+# CHECKR-NEXT:       0x20 R_LARCH_ADD32 <null> 0x0
+# CHECKR-NEXT:       0x20 R_LARCH_SUB32 <null> 0x0
+# CHECKR-NEXT:       0x2A R_LARCH_ADD6 <null> 0x0
+# CHECKR-NEXT:       0x2A R_LARCH_SUB6 <null> 0x0
 # CHECKR-NEXT:     }
 # CHECKR-NEXT:   ]
 
