@@ -6,8 +6,8 @@
 # RUN: ld.lld --section-start=.text=0x12000 --section-start=.text2=0x14000 -e 0 %t.64.o -o %t.64
 # RUN: ld.lld --section-start=.text=0x12000 --section-start=.text2=0x14000 -e 0 %t.32.o --no-relax -o %t.32.norelax
 # RUN: ld.lld --section-start=.text=0x12000 --section-start=.text2=0x14000 -e 0 %t.64.o --no-relax -o %t.64.norelax
-# RUN: llvm-objdump -td --no-show-raw-insn %t.32 | FileCheck %s --check-prefix=CHECK32
-# RUN: llvm-objdump -td --no-show-raw-insn %t.64 | FileCheck %s --check-prefix=CHECK64
+# RUN: llvm-objdump -td --no-show-raw-insn %t.32 | FileCheck %s --check-prefix=CHECK32R
+# RUN: llvm-objdump -td --no-show-raw-insn %t.64 | FileCheck %s --check-prefix=CHECK64R
 # RUN: llvm-objdump -td --no-show-raw-insn %t.32.norelax | FileCheck %s --check-prefix=CHECK32
 # RUN: llvm-objdump -td --no-show-raw-insn %t.64.norelax | FileCheck %s --check-prefix=CHECK64
 
@@ -125,6 +125,16 @@
 # CHECKR-EMPTY:
 # CHECKR-NEXT:   <.L2>:
 # CHECKR-NEXT:           break 4
+
+# CHECK32R-DAG: 00012000 l       .text	{{0*}}44 .Ltext_start
+# CHECK32R-DAG: 0001202c l       .text	{{0*}}18 .L1
+# CHECK32R-DAG: 00012040 l       .text	{{0*}}04 .L2
+# CHECK32R-DAG: 00014000 l       .text2	{{0*}}14 .Ltext2_start
+
+# CHECK64R-DAG: 00012000 l       .text	{{0*}}44 .Ltext_start
+# CHECK64R-DAG: 0001202c l       .text	{{0*}}18 .L1
+# CHECK64R-DAG: 00012040 l       .text	{{0*}}04 .L2
+# CHECK64R-DAG: 00014000 l       .text2	{{0*}}14 .Ltext2_start
 
   .text
 .Ltext_start:

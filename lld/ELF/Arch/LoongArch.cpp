@@ -50,6 +50,8 @@ enum Op {
   ADDI_W = 0x02800000,
   ADDI_D = 0x02c00000,
   ANDI = 0x03400000,
+  PCADDI = 0x18000000,
+  PCALAU12I = 0x1a000000,
   PCADDU12I = 0x1c000000,
   LD_W = 0x28800000,
   LD_D = 0x28c00000,
@@ -523,8 +525,7 @@ RelExpr LoongArch::getRelExpr(const RelType type, const Symbol &s,
   case R_LARCH_TLS_GD_HI20:
     return R_TLSGD_GOT;
   case R_LARCH_RELAX:
-    // LoongArch linker relaxation is not implemented yet.
-    return R_NONE;
+    return config->relax ? R_RELAX_HINT : R_NONE;
   case R_LARCH_ALIGN:
     return R_RELAX_HINT;
 
@@ -700,6 +701,61 @@ void LoongArch::relocate(uint8_t *loc, const Relocation &rel,
   }
 }
 
+// Relax R_LARCH_PCALA_{HI20,LO12}
+// pcalau12i+addi.{d,w} to pcaddi
+static void relaxPcalaAddi(const InputSection &sec, size_t i, uint64_t loc,
+                           Relocation &r, Relocation &rl, uint32_t &remove) {
+  const Symbol &sym = *r.sym;
+  const uint32_t pca = read64le(sec.content().data() + r.offset);
+  const uint32_t adi = read64le(sec.content().data() + rl.offset);
+  const uint32_t rd = pca & 0x1f;
+  const uint32_t op_addi = config->is64 ? ADDI_D : ADDI_W;
+  const uint64_t dest = sym.getVA() + r.addend;
+  const int64_t displace = dest - loc;
+
+  if (!(dest & 0x3) && isInt<22>(displace) && rd == (adi & 0x1f) &&
+      rd == ((adi >> 5) & 0x1f) && rl.offset == r.offset + 4 &&
+      (adi & 0xffc00000) == op_addi) {
+    sec.relaxAux->relocTypes[i] = R_LARCH_PCREL20_S2;
+    sec.relaxAux->relocTypes[i + 2] = R_LARCH_RELAX;
+    sec.relaxAux->writes.push_back(PCADDI | rd);
+    remove = 4;
+  }
+}
+
+// Relax R_LARCH_GOT_PC_{HI20,LO12}
+// pcalau12i+ld.{d,w} to pcalau12i+addi.{d,w} or pcaddi
+static void relaxPcalaLd(const InputSection &sec, size_t i, uint64_t loc,
+                         Relocation &r, Relocation &rl, uint32_t &remove) {
+  const Symbol &sym = *r.sym;
+  const uint32_t pca = read64le(sec.content().data() + r.offset);
+  const uint32_t ld = read64le(sec.content().data() + rl.offset);
+  const uint32_t rd = pca & 0x1f;
+  const uint32_t op_addi = config->is64 ? ADDI_D : ADDI_W;
+  const uint32_t op_ld = config->is64 ? LD_D : LD_W;
+  const uint64_t dest = sym.getVA() + r.addend;
+  const int64_t displace = dest - loc;
+
+  if (!sym.isLocal())
+    return;
+
+  if (rd != (ld & 0x1f) || rd != ((ld >> 5) & 0x1f) ||
+      rl.offset != r.offset + 4 || (ld & 0xffc00000) != op_ld)
+    return;
+
+  if (!(dest & 0x3) && isInt<22>(displace)) {
+    sec.relaxAux->relocTypes[i] = R_LARCH_PCREL20_S2;
+    sec.relaxAux->relocTypes[i + 2] = R_LARCH_RELAX;
+    sec.relaxAux->writes.push_back(PCADDI | rd);
+    remove = 4;
+  } else {
+    sec.relaxAux->relocTypes[i] = R_LARCH_PCALA_HI20;
+    sec.relaxAux->relocTypes[i + 2] = R_LARCH_PCALA_LO12;
+    sec.relaxAux->writes.push_back(PCALAU12I | rd);
+    sec.relaxAux->writes.push_back(op_addi | (rd << 5) | rd);
+  }
+}
+
 static bool relax(InputSection &sec) {
   const uint64_t secAddr = sec.getVA();
   auto &aux = *sec.relaxAux;
@@ -723,6 +779,20 @@ static bool relax(InputSection &sec) {
              "R_LARCH_ALIGN needs expanding the content");
       break;
     }
+    case R_LARCH_PCALA_HI20:
+      if (i + 3 < sec.relocs().size() &&
+          sec.relocs()[i + 1].type == R_LARCH_RELAX &&
+          sec.relocs()[i + 2].type == R_LARCH_PCALA_LO12 &&
+          sec.relocs()[i + 3].type == R_LARCH_RELAX)
+        relaxPcalaAddi(sec, i, loc, r, sec.relocs()[i + 2], remove);
+      break;
+    case R_LARCH_GOT_PC_HI20:
+      if (i + 3 < sec.relocs().size() &&
+          sec.relocs()[i + 1].type == R_LARCH_RELAX &&
+          sec.relocs()[i + 2].type == R_LARCH_GOT_PC_LO12 &&
+          sec.relocs()[i + 3].type == R_LARCH_RELAX)
+        relaxPcalaLd(sec, i, loc, r, sec.relocs()[i + 2], remove);
+      break;
     }
 
     // For all anchors whose offsets are <= r.offset, they are preceded by
@@ -792,6 +862,7 @@ void LoongArch::finalizeRelax(int passes) const {
       MutableArrayRef<Relocation> rels = sec->relocs();
       ArrayRef<uint8_t> old = sec->content();
       size_t newSize = old.size() - aux.relocDeltas[rels.size() - 1];
+      size_t writesIdx = 0;
       uint8_t *p = context().bAlloc.Allocate<uint8_t>(newSize);
       uint64_t offset = 0;
       int64_t delta = 0;
@@ -810,9 +881,36 @@ void LoongArch::finalizeRelax(int passes) const {
         // Copy from last location to the current relocated location.
         const Relocation &r = rels[i];
         uint64_t size = r.offset - offset;
+
+        // The rel.type may be fixed to R_LARCH_RELAX and the instruction
+        // will be deleted, then cause size<0
+        if (remove == 0 && (int64_t)size < 0) {
+          assert(aux.relocTypes[i] == R_LARCH_RELAX && "Unexpected size");
+          continue;
+        }
+
         memcpy(p, old.data() + offset, size);
         p += size;
-        offset = r.offset + remove;
+
+        int64_t skip = 0;
+        if (RelType newType = aux.relocTypes[i]) {
+          switch (newType) {
+          case R_LARCH_RELAX:
+            // Indicate the relocation is ignored.
+            break;
+          case R_LARCH_PCREL20_S2:
+          case R_LARCH_PCALA_HI20:
+          case R_LARCH_PCALA_LO12:
+            skip = 4;
+            write32le(p, aux.writes[writesIdx++]);
+            break;
+          default:
+            llvm_unreachable("unsupported type");
+          }
+        }
+
+        p += skip;
+        offset = r.offset + skip + remove;
       }
       memcpy(p, old.data() + offset, old.size() - offset);
 
@@ -824,6 +922,13 @@ void LoongArch::finalizeRelax(int passes) const {
         uint64_t cur = rels[i].offset;
         do {
           rels[i].offset -= delta;
+          // Fix expr so that getRelocTargetVA will get update value.
+          if (aux.relocTypes[i] == R_LARCH_PCREL20_S2)
+            rels[i].expr = R_PC;
+          else if (aux.relocTypes[i] == R_LARCH_PCALA_HI20)
+            rels[i].expr = R_LOONGARCH_PAGE_PC;
+          else if (aux.relocTypes[i] == R_LARCH_PCALA_LO12)
+            rels[i].expr = R_ABS;
           if (aux.relocTypes[i] != R_LARCH_NONE)
             rels[i].type = aux.relocTypes[i];
         } while (++i != e && rels[i].offset == cur);

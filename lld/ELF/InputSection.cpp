@@ -349,9 +349,10 @@ InputSectionBase *InputSection::getRelocatedSection() const {
 
 template <class ELFT, class RelTy>
 void InputSection::copyRelocations(uint8_t *buf) {
-  if (config->relax && !config->relocatable && config->emachine == EM_RISCV) {
-    // On RISC-V, relaxation might change relocations: copy from internal ones
-    // that are updated by relaxation.
+  if (config->relax && !config->relocatable &&
+      (config->emachine == EM_RISCV || config->emachine == EM_LOONGARCH)) {
+    // On RISC-V and LoongArch, relaxation might change relocations: copy
+    // from internal ones that are updated by relaxation.
     InputSectionBase *sec = getRelocatedSection();
     copyRelocations<ELFT, RelTy>(buf, llvm::make_range(sec->relocations.begin(),
                                                        sec->relocations.end()));
